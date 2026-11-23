@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Calibrated send-on-delta: code, data and results"
+authors:
+  - family-names: Al-Sayyed
+    given-names: Rizik
+    affiliation: "King Abdullah II School of Information Technology, The University of Jordan"
+    email: r.alsayyed@ju.edu.jo
+version: 1.0.0
+date-released: 2026-11-23
+license: MIT
+repository-code: "https://github.com/rizikalsayyed/calibrated-send-on-delta"
