@@ -14,6 +14,14 @@ SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e6e5e1"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 
 
+TITLES = False      # in-figure headline titles (off for the journal version)
+
+
+def _suptitle(fig, *a, **k):
+    if TITLES:
+        fig.suptitle(*a, **k)
+
+
 def _style(ax, grid_axis="y"):
     ax.set_facecolor(SURFACE)
     for side in ("top", "right"):
@@ -71,7 +79,7 @@ def fig_messages(summ: pd.DataFrame, out: str, alpha: float = 0.05) -> str:
     fig.supxlabel("Messages, as a share of every node reporting every round (audits included). "
                   "Hindsight rows: cheapest setting within the target on the evaluated rounds.",
                   fontsize=8, color=INK2)
-    fig.suptitle("Send-on-delta needs fewer messages than safe zones on both datasets",
+    _suptitle(fig, "Send-on-delta needs fewer messages than safe zones on both datasets",
                  x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     path = os.path.join(out, "fig_messages.png")
@@ -104,7 +112,7 @@ def fig_guarantee(runs: pd.DataFrame, out: str) -> str:
         ax.set_xlabel("target", fontsize=8.5, color=INK2)
         _style(ax, "y")
     axes[0][0].set_ylabel("rounds outside tolerance, %", fontsize=8.5, color=INK2)
-    fig.suptitle("Realised violation rates track the target on average, with a wide spread "
+    _suptitle(fig, "Realised violation rates track the target on average, with a wide spread "
                  "at the lowest audit rate", x=0.01, ha="left", fontsize=11, color=INK,
                  fontweight="bold")
     fig.text(0.01, 0.01, "Dots: one run (case x seed).  Orange: target.  Black: mean.",
@@ -177,7 +185,7 @@ def fig_highdim(summ: pd.DataFrame, out: str, alpha: float = 0.05) -> str:
                   "tolerance.  For the four synthetic benchmarks it is run on 20 joined draws of "
                   "the generator; the published streams are too short.",
                   fontsize=8, color=INK2)
-    fig.suptitle("On AutoMon's own benchmarks, tuned or calibrated send-on-delta needs fewer "
+    _suptitle(fig, "On AutoMon's own benchmarks, tuned or calibrated send-on-delta needs fewer "
                  "messages than safe zones",
                  x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
@@ -230,7 +238,7 @@ def fig_calibration(summ: pd.DataFrame, out: str, alpha: float = 0.01,
                   fontsize=8.5, color=INK2)
     for a in (ax, bx):
         _style(a, "x")
-    fig.suptitle(title or f"Calibration variants at a {alpha:.0%} target", x=0.01, ha="left",
+    _suptitle(fig, title or f"Calibration variants at a {alpha:.0%} target", x=0.01, ha="left",
                  fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     path = os.path.join(out, "fig_calibration.png")
@@ -285,7 +293,7 @@ def fig_tolerance(tol: pd.DataFrame, out: str) -> str:
     fig.supxlabel("Tolerance, as a multiple of the default (0.1 of the monitored value's "
                   "spread for Beijing and Intel; AutoMon's configured value for its benchmarks)."
                   "  Messages as a share of full reporting, log scale.", fontsize=8, color=INK2)
-    fig.suptitle("Send-on-delta stays cheaper than safe zones at every tolerance tested",
+    _suptitle(fig, "Send-on-delta stays cheaper than safe zones at every tolerance tested",
                  x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     path = os.path.join(out, "fig_tolerance.png")
@@ -346,7 +354,7 @@ def fig_ablation(abl: pd.DataFrame, out: str, alpha: float = 0.01) -> str:
     bx.set_title("(b) Messages, relative to 1% audits", fontsize=9.5, color=INK, loc="left")
     cx.set_title("(c) Steps outside tolerance, %", fontsize=9.5, color=INK, loc="left")
     bx.legend(frameon=False, fontsize=8)
-    fig.suptitle("The send-on-delta trigger, not the calibration alone, carries the saving",
+    _suptitle(fig, "The send-on-delta trigger, not the calibration alone, carries the saving",
                  x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     path = os.path.join(out, "fig_ablation.png")
@@ -380,7 +388,7 @@ def fig_energy(energy: pd.DataFrame, out: str, alpha: float = 0.01) -> str:
                   fontsize=8.5, color=INK2)
     ax.legend(frameon=False, fontsize=8, loc="lower right")
     _style(ax, "x")
-    fig.suptitle("At one reading per minute, calibrated send-on-delta multiplies battery life",
+    _suptitle(fig, "At one reading per minute, calibrated send-on-delta multiplies battery life",
                  x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     path = os.path.join(out, "fig_energy.png")
@@ -418,14 +426,14 @@ def fig_alerts(summ: pd.DataFrame, out: str) -> str:
               "(c) False alert hours"]
     for ax, t in zip(axes, titles):
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{t_:g} ug/m3" for t_ in tols])
+        ax.set_xticklabels([f"{t_:g} µg/m³" for t_ in tols])
         ax.set_xlabel("Tolerance on the forecast", fontsize=8.5, color=INK2)
         ax.set_title(t, fontsize=9.5, color=INK, loc="left")
         _style(ax, "y")
-    axes[0].legend(frameon=False, fontsize=8, loc="upper left")
+    axes[0].legend(frameon=False, fontsize=8, loc="upper right")
     axes[1].legend(frameon=False, fontsize=8, loc="upper left")
     n = int(summ.alert_hours.iloc[0])
-    fig.suptitle(f"Beijing heavy-pollution alerts, Oct 2014 - Feb 2017 ({n} alert hours under "
+    _suptitle(fig, f"Beijing heavy-pollution alerts, Oct 2014 - Feb 2017 ({n} alert hours under "
                  "full reporting)", x=0.01, ha="left", fontsize=11.5, color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     path = os.path.join(out, "fig_alerts.png")
@@ -447,17 +455,101 @@ def fig_episode(tr: pd.DataFrame, out: str, start: str = "2015-11-26",
     ax.plot(d.time, d.full, color=INK, lw=1.4, label="forecast, full reporting")
     ax.plot(d.time, d.sod, color=AQUA, lw=1.1, label="forecast, calibrated send-on-delta (1%)")
     ax.axhline(threshold, color=ORANGE, lw=1.3)
-    ax.text(d.time.iloc[0], threshold, " alert threshold 150 ug/m3", color=ORANGE, fontsize=8,
-            va="bottom")
-    ax.set_ylabel("Regional 24-h mean PM2.5, ug/m3", fontsize=8.5, color=INK2)
+    ax.text(d.time.iloc[-1], threshold * 1.02, "alert threshold 150 µg/m³ ", color=ORANGE,
+            fontsize=8, va="bottom", ha="right",
+            bbox=dict(facecolor=SURFACE, edgecolor="none", alpha=0.85, pad=1.5))
+    ax.set_ylabel("Regional 24-h mean PM2.5, µg/m³", fontsize=8.5, color=INK2)
     ax.legend(frameon=False, fontsize=8, loc="upper left", ncol=2)
     _style(ax, "y")
     ax.set_ylim(top=max(d[["full", "actual"]].max()) * 1.25)
-    fig.suptitle("Winter 2015-16: the send-on-delta estimate tracks the full-reporting forecast "
+    _suptitle(fig, "Winter 2015-16: the send-on-delta estimate tracks the full-reporting forecast "
                  "through Beijing's worst smog episodes", x=0.01, ha="left", fontsize=11,
                  color=INK, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     path = os.path.join(out, "fig_episode.png")
     fig.savefig(path, dpi=160, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
+def fig_energy2(e: pd.DataFrame, out: str) -> str:
+    """Battery life per node (class-A accounting): mean node as bars, busiest node as ticks."""
+    cases = list(e.label)
+    y = np.arange(len(cases))[::-1]
+    fig, ax = plt.subplots(figsize=(9.6, 0.5 * len(cases) + 1.9))
+    fig.patch.set_facecolor(SURFACE)
+    h = 0.26
+    spec = ((h, "full", INK2, "Full reporting"),
+            (0, "zone", ORANGE, "Safe zones (AutoMon)"),
+            (-h, "sod", AQUA, "Calibrated send-on-delta, 1% target"))
+    for off, col, c, lab in spec:
+        ax.barh(y + off, e[f"{col}_mean"], height=h * 0.92, color=c, label=lab)
+        ax.scatter(e[f"{col}_busiest"], y + off, marker="|", s=90, color=INK, zorder=3,
+                   label="busiest node" if col == "full" else None)
+        for yi, v in zip(y, e[f"{col}_mean"]):
+            ax.text(v + 0.06, yi + off, f"{v:.2f}" if v < 1 else f"{v:.1f}", va="center",
+                    fontsize=7, color=INK)
+    ax.set_yticks(y)
+    ax.set_yticklabels([f"{c}  ({r})" for c, r in zip(cases, e.rate)], fontsize=8.5, color=INK)
+    ax.set_xlabel("Battery life per node, years (2400 mAh, LoRaWAN class A, SF7)",
+                  fontsize=8.5, color=INK2)
+    ax.legend(frameon=False, fontsize=8, loc="upper center", bbox_to_anchor=(0.45, -0.09),
+              ncol=4)
+    _style(ax, "x")
+    fig.tight_layout()
+    path = os.path.join(out, "fig_energy.png")
+    fig.savefig(path, dpi=200, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
+def fig_network(loss: pd.DataFrame, scale: pd.DataFrame, out: str) -> str:
+    """(a) Realised violations under lossy uplinks; (b) messages against network size."""
+    fig, (ax, bx, cx) = plt.subplots(1, 3, figsize=(13.2, 3.9))
+    fig.patch.set_facecolor(SURFACE)
+    c = loss.groupby(["model", "loss", "confirmed", "case"]).agg(
+        viol=("viol_rate", "mean"), classA=("mean_classA", "mean")).reset_index()
+    base = c[(c.loss == 0) & (~c.confirmed)].set_index("case").classA
+    c["rel"] = c.classA / c.case.map(base)
+    styles = {("bernoulli", False): (BLUE, "-", "independent loss, unconfirmed"),
+              ("ge", False): (ORANGE, "-", "bursty loss, unconfirmed"),
+              ("bernoulli", True): (BLUE, "--", "independent loss, confirmed"),
+              ("ge", True): (ORANGE, "--", "bursty loss, confirmed")}
+    zero = c[c.loss == 0]
+    for (model, conf), (col, ls, lab) in styles.items():
+        g = pd.concat([zero.assign(model=model)[zero.confirmed == conf],
+                       c[(c.model == model) & (c.confirmed == conf) & (c.loss > 0)]])
+        m = g.groupby("loss").agg(viol=("viol", "mean"), vmax=("viol", "max"),
+                                  rel=("rel", "mean")).reset_index()
+        ax.plot(100 * m.loss, 100 * m.viol, color=col, ls=ls, marker="o", ms=3.5, label=lab)
+        ax.plot(100 * m.loss, 100 * m.vmax, color=col, ls=ls, lw=0.8, alpha=0.45)
+        bx.plot(100 * m.loss, m.rel, color=col, ls=ls, marker="o", ms=3.5, label=lab)
+    ax.axhline(1.0, color=INK2, lw=1, ls=":")
+    ax.text(0.2, 1.05, "target 1%", fontsize=7.5, color=INK2, va="bottom")
+    ax.set_xlabel("Uplink loss rate, %", fontsize=8.5, color=INK2)
+    ax.set_ylabel("Rounds outside tolerance, %", fontsize=8.5, color=INK2)
+    ax.set_title("(a) Realised violations (thin: worst case)", fontsize=9.5, color=INK, loc="left")
+    ax.legend(frameon=False, fontsize=7.5, loc="upper left")
+    bx.set_xlabel("Uplink loss rate, %", fontsize=8.5, color=INK2)
+    bx.set_ylabel("Uplink transactions, relative to no loss", fontsize=8.5, color=INK2)
+    bx.set_title("(b) Radio cost (mean of ten cases)", fontsize=9.5, color=INK, loc="left")
+    s = scale.groupby(["function", "k", "method"]).msg_ratio.mean().reset_index()
+    for fn, mk in (("variance", "o"), ("mlp", "s")):
+        for meth, col, lab in (("zone", ORANGE, "Safe zones"),
+                               ("sod-calibrated", AQUA, "Calibrated send-on-delta")):
+            g = s[(s.function == fn) & (s.method == meth)]
+            cx.plot(g.k, 100 * g.msg_ratio, color=col, marker=mk, ms=4,
+                    ls="-" if fn == "variance" else "--",
+                    label=f"{lab}, {'variance' if fn == 'variance' else 'network'}")
+    cx.set_xscale("log")
+    cx.set_xlabel("Nodes k (Intel deployment, resampled)", fontsize=8.5, color=INK2)
+    cx.set_ylabel("Messages, % of full reporting", fontsize=8.5, color=INK2)
+    cx.set_title("(c) Network size", fontsize=9.5, color=INK, loc="left")
+    cx.legend(frameon=False, fontsize=7.5, loc="center right")
+    for a_ in (ax, bx, cx):
+        _style(a_, "y")
+    fig.tight_layout()
+    path = os.path.join(out, "fig_network.png")
+    fig.savefig(path, dpi=200, facecolor=SURFACE)
     plt.close(fig)
     return path

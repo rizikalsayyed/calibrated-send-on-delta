@@ -15,7 +15,9 @@ repository compares this with geometric monitoring (AutoMon, SIGMOD 2022) on
 two public sensor deployments and on AutoMon's own benchmarks, converts
 messages to LoRaWAN battery life, and runs a Beijing air-quality alert case
 study. Every number and table in the paper is produced by the scripts here
-(`make_paper_tables.py` writes the paper's tables from the result files).
+(`make_paper_tables.py` writes the paper's tables from the result files,
+`make_paper_figures.py` draws its figures, and `fill_paper_numbers.py` fills
+the numbers quoted in the text).
 
 The work is organised in stages, each with its own script and results folder:
 
@@ -26,6 +28,7 @@ The work is organised in stages, each with its own script and results folder:
 | 4. Calibration rules at small targets | `run_calibration.py` | `results_calibration/` |
 | 5. Tolerance sweep, ablations, battery life | `run_stage5.py` | `results_stage5/` |
 | 6. Beijing heavy-pollution alerts | `run_alerts.py` | `results_alerts/` |
+| 7. Revision: matched streams, calibrated safe zones, offline tuning, message directions, packet loss, network size | `run_revision.py` | `results_revision/` |
 
 (Stage 1, an earlier single-sensor study, is not part of the paper.)
 
@@ -412,6 +415,37 @@ At a tolerance of 5 ug/m3 on the forecast (`summary.csv`, `fig_alerts.png`):
   alerts: the send-on-delta estimate is visually indistinguishable from full
   reporting.
 
+
+## Stage 7: revision experiments
+
+```
+python run_revision.py --part zones-plain --bench data/bench --out results_revision
+python run_revision.py --part zones       --bench data/bench --out results_revision
+python run_revision.py --part sod         --bench data/bench --out results_revision
+python run_revision.py --part retrain     --out results_revision
+python run_revision.py --part loss        --bench data/bench --out results_revision
+python run_revision.py --part scale       --out results_revision
+python make_paper_tables.py paper_tables
+python make_paper_figures.py paper_tables paper_figures
+```
+
+- **Message directions.** `protocols.py` now records uplinks, downlinks, and
+  downlinks to nodes that did not transmit in the same round ("unsolicited",
+  which a LoRaWAN class-A node cannot receive without an extra uplink), per
+  node. Totals are unchanged from earlier stages (checked run by run).
+- **Matched streams.** Safe zones are re-run on the joined synthetic streams,
+  so AutoMon and calibrated send-on-delta are compared on the same data.
+- **Calibrated safe zones** use the same audits and near-miss rule.
+- **Offline-tuned send-on-delta** keeps the tolerance tuned on the tuning
+  period, with no audits.
+- **Packet loss.** `run_filter(..., loss=q, loss_model="bernoulli"|"ge",
+  confirmed=...)`: unconfirmed reports can be lost silently; confirmed reports
+  are retransmitted until acknowledged; audit reports are always confirmed.
+- **Network size.** `revision.scaled_intel` resamples the Intel deployment to
+  10-1000 nodes (extra nodes replay a mote shifted by 1-30 minutes).
+- **Energy.** `ablation.battery_years(..., idle_ma=...)` gives the
+  sensitivity to the current drawn while waiting for the receive windows.
+
 ## Limits of this pilot
 
 - **Two datasets, two functions.** Enough for a go/no-go, not for a paper.
@@ -463,4 +497,13 @@ run_alerts.py                stage 6: Beijing heavy-pollution alerts
 monitor_pilot/alerts.py      stage 6: alert rule, decision metrics, traces
 tests/test_alerts.py         stage 6: checks
 results_alerts/              stage 6: runs, summary, skill, traces, two figures
+run_revision.py              stage 7: experiments requested in review
+monitor_pilot/revision.py    stage 7: safe zones on matched streams, calibrated safe zones,
+                             offline-tuned send-on-delta, eta/u_max sensitivity, packet loss,
+                             network size, networks fitted on the first 30% only
+tests/test_revision.py       stage 7: checks
+results_revision/            stage 7: zones.csv (and worker folders z2-z4), sod.csv, loss.csv,
+                             scale.csv, retrain.csv
+make_paper_figures.py        all figures of the paper, without in-figure titles
+fill_paper_numbers.py        numbers quoted in the paper's text, from the result files
 ```

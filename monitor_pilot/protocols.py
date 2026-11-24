@@ -129,6 +129,16 @@ class Run:
     audit_loss: float = 0.0
     u_trace: list = field(default_factory=list)
     est: np.ndarray = field(default_factory=lambda: np.zeros(0))   # coordinator's value
+    # message directions (revision): uplinks, downlinks, downlinks to a node that
+    # did not transmit in the same round (impossible in LoRaWAN class A without
+    # an extra uplink from that node), and per-node counts
+    up: int = 0
+    down: int = 0
+    unsolicited: int = 0
+    node_up: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    node_down: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    node_unsol: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    lost: int = 0
 
     @property
     def msg_ratio(self) -> float:
@@ -167,9 +177,48 @@ def run_periodic(X, func, eps, period: int, F_true=None) -> Run:
                msgs=k * len(np.unique(last)), err=np.abs(F_true - F_true[last]))
 
 
+class _Channel:
+    """Uplink losses: independent (Bernoulli) or bursty (Gilbert-Elliott, one
+    two-state chain per node, advanced at each transmission attempt; every
+    attempt in the bad state is lost, mean burst length ``burst`` attempts)."""
+
+    def __init__(self, k, loss, model="bernoulli", burst=3.0, seed=0):
+        self.loss, self.model = float(loss), model
+        self.rng = np.random.default_rng(10_000 + seed)
+        self.bad = np.zeros(k, bool)
+        self.b2g = 1.0 / burst
+        self.g2b = self.loss * self.b2g / max(1.0 - self.loss, 1e-12)
+        if model == "ge" and self.loss > 0:          # start in the stationary state
+            self.bad = self.rng.random(k) < self.loss
+
+    def attempt(self, nodes):
+        """Delivered flags for one transmission attempt by each of ``nodes``."""
+        if self.loss <= 0:
+            return np.ones(len(nodes), bool)
+        if self.model == "bernoulli":
+            return self.rng.random(len(nodes)) >= self.loss
+        r = self.rng.random(len(nodes))
+        b = self.bad[nodes]
+        b = np.where(b, r >= self.b2g, r < self.g2b)
+        self.bad[nodes] = b
+        return ~b
+
+    def until_delivered(self, nodes):
+        """Attempts per node when each node retransmits until delivered."""
+        att = np.zeros(len(nodes), int)
+        todo = np.arange(len(nodes))
+        while len(todo):
+            att[todo] += 1
+            ok = self.attempt(nodes[todo])
+            todo = todo[~ok]
+        return att
+
+
 def run_filter(X, func, eps, delta: float, F_true=None,
                cal: Optional[Calibration] = None, period: int = 0,
-               weights: Optional[np.ndarray] = None) -> Run:
+               weights: Optional[np.ndarray] = None, loss: float = 0.0,
+               loss_model: str = "bernoulli", burst: float = 3.0,
+               confirmed: bool = False, loss_seed: int = 0) -> Run:
     """Send-on-delta per node; ``delta`` is in units of ``func.scale``.
 
     A node reports when the distance between its vector and its last report
@@ -179,16 +228,26 @@ def run_filter(X, func, eps, delta: float, F_true=None,
     changes (periodic reporting for streams where nodes update one at a time).
     With ``cal`` the tolerance (or the period) is multiplied by exp(u) and u is
     calibrated by audits.
+
+    Lossy uplinks (revision): with ``loss`` > 0 each report is lost with that
+    probability (``loss_model`` "bernoulli" or "ge").  A node does not know its
+    report was lost unless ``confirmed``, in which case it retransmits until the
+    gateway's acknowledgement (one downlink in the node's receive window)
+    arrives.  Audit reports are always confirmed, so an audit re-synchronises
+    every node.  The new u is sent in the receive window of each node's audit
+    report.
     """
     T, k, _ = X.shape
     F_true = true_values(X, func) if F_true is None else F_true
     run = Run("filter", T, k, eps, n_updates(X), err=np.zeros(T), est=np.zeros(T))
     audit = cal.schedule(T) if cal else None
+    ch = _Channel(k, loss, loss_model, burst, loss_seed)
     u = 0.0
     scale = func.scale if weights is None else func.scale / weights
-    last = X[0].copy()
+    last = X[0].copy()                 # node side: last vector each node sent
+    coord = X[0].copy()                # coordinator side: last vector received
     since = np.zeros(k, dtype=int)
-    msgs = k
+    node_up, node_down = np.ones(k), np.zeros(k)
     for t in range(1, T):
         x = X[t]
         d = x - last
@@ -207,27 +266,43 @@ def run_filter(X, func, eps, delta: float, F_true=None,
         else:                                   # at the floor every change is reported
             tol = 0.0 if cal is not None and u <= cal.u_min else delta * np.exp(u)
             send = np.sqrt(np.sum((d / scale) ** 2, axis=1)) > tol
-        n_send = int(send.sum())
-        if n_send:
-            last[send] = x[send]
-            msgs += n_send
-        v = func.f(last.mean(axis=0))[0]
+        idx = np.nonzero(send)[0]
+        if len(idx):
+            last[idx] = x[idx]
+            if confirmed:
+                node_up[idx] += ch.until_delivered(idx)
+                node_down[idx] += 1                         # acknowledgement
+                coord[idx] = x[idx]
+            else:
+                ok = ch.attempt(idx)
+                node_up[idx] += 1
+                coord[idx[ok]] = x[idx[ok]]
+                run.lost += int((~ok).sum())
+        v = func.f(coord.mean(axis=0))[0]
         e = abs(F_true[t] - v)
         run.est[t] = v
         if cal is not None and audit[t]:
-            loss = float(cal.loss(e / eps))
-            u = float(min(u + cal.eta * (cal.alpha - loss), cal.u_max))   # no lower clip
-            msgs += (k - n_send) + k          # remaining reports + new tolerance
+            loss_ = float(cal.loss(e / eps))
+            u = float(min(u + cal.eta * (cal.alpha - loss_), cal.u_max))   # no lower clip
+            rest = np.setdiff1d(np.arange(k), idx)          # nodes not yet heard this round
+            if confirmed or loss > 0:
+                node_up[rest] += ch.until_delivered(rest)
+            else:
+                node_up[rest] += 1
+            node_down += 1                                  # new u, in each receive window
             last = x.copy()
+            coord = x.copy()
             run.audits += 1
             run.audit_violations += int(e > eps * (1 + 1e-9))
-            run.audit_loss += loss
+            run.audit_loss += loss_
             run.u_trace.append(u)
             e = 0.0
             run.est[t] = F_true[t]
         run.err[t] = e
     run.est[0] = F_true[0]
-    run.msgs = msgs
+    run.node_up, run.node_down, run.node_unsol = node_up, node_down, np.zeros(k)
+    run.up, run.down = int(node_up.sum()), int(node_down.sum())
+    run.msgs = run.up + run.down
     return run
 
 
@@ -339,11 +414,11 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
 
     zone, slack = full_sync(X[0])
     run.est[0] = zone.f0
-    msgs = k
+    nu, nd, nx = np.ones(k), np.zeros(k), np.zeros(k)     # up, down, unsolicited down
     for t in range(1, T):
         x = X[t]
         if st["central"]:                       # fallback: everyone reports
-            msgs += k
+            nu += 1
             run.est[t] = F_true[t]
             if audit[t]:
                 st["u"] = min(st["u"] + cal.eta * cal.alpha, cal.u_max)
@@ -352,13 +427,15 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
                 if st["u"] > cal.u_min:
                     st["central"] = False
                     zone, slack = full_sync(x)
-                    msgs += k
+                    nd += 1                     # new zone, in each receive window
             continue
         P = x - slack
         ok, origin = zone.check(P)
+        heard = np.zeros(k, bool)               # nodes that transmitted this round
         if not ok.all():
             viol = ~ok
-            msgs += int(viol.sum())
+            nu[viol] += 1
+            heard |= viol
             for o in origin[viol]:
                 st["nb"] = st["nb"] + 1 if o == 1 else 0
             have = viol.copy()
@@ -370,7 +447,7 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
                     m = P[S].mean(axis=0)
                     if zone.check(m[None])[0][0]:
                         slack[S] = x[S] - m
-                        msgs += len(S)
+                        nd[S] += 1              # new slack; every node in S has sent
                         lru[S] += 1
                         run.lazy_syncs += 1
                         break
@@ -379,10 +456,18 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
                     lru[:] = 0
                     break
                 rest = np.nonzero(~have)[0]
-                have[rest[np.argsort(lru[rest], kind="stable")[0]]] = True
-                msgs += 2
+                j = rest[np.argsort(lru[rest], kind="stable")[0]]
+                have[j] = True
+                nd[j] += 1                      # request to a silent node
+                nx[j] += 1
+                nu[j] += 1                      # its reply
+                heard[j] = True
             if eager:
-                msgs += 2 * int((~have).sum()) + k
+                miss = ~have
+                nd[miss] += 1                   # requests to silent nodes
+                nx[miss] += 1
+                nu[miss] += 1                   # replies
+                nd += 1                         # new zone to every node
                 zone, slack = full_sync(x)
         e = abs(F_true[t] - zone.f0)
         run.est[t] = zone.f0
@@ -393,7 +478,8 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
             run.audit_violations += int(e > eps * (1 + 1e-9))
             run.audit_loss += loss
             run.u_trace.append(st["u"])
-            msgs += 2 * k
+            nu += 1                             # every node reports (shared schedule)
+            nd += 1                             # and receives the new zone and u
             if st["u"] <= cal.u_min:
                 st["central"] = True
             else:
@@ -401,5 +487,7 @@ def run_zone(X, func, eps, r: Optional[float] = None, theta: float = 1.0,
             e = 0.0
             run.est[t] = F_true[t]
         run.err[t] = e
-    run.msgs = msgs
+    run.node_up, run.node_down, run.node_unsol = nu, nd, nx
+    run.up, run.down, run.unsolicited = int(nu.sum()), int(nd.sum()), int(nx.sum())
+    run.msgs = run.up + run.down
     return run

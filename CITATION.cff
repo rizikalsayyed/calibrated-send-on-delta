@@ -6,7 +6,7 @@ authors:
     given-names: Rizik
     affiliation: "King Abdullah II School of Information Technology, The University of Jordan"
     email: r.alsayyed@ju.edu.jo
-version: 1.0.0
-date-released: 2026-11-23
+version: 2.0.0
+date-released: 2026-11-24
 license: MIT
 repository-code: "https://github.com/rizikalsayyed/calibrated-send-on-delta"

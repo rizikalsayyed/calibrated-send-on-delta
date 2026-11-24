@@ -48,16 +48,24 @@ def time_on_air_ms(payload: int, sf: int = 7, bw: float = 125e3, cr: int = 1,
     return (preamble + 4.25) * t_sym + n * t_sym
 
 
-def charge_per_message_mc(d: int, sf: int = 7) -> float:
-    """Charge of one class-A uplink carrying a d-dimensional vector, in mC."""
+def charge_per_message_mc(d: int, sf: int = 7, idle_ma: float = None) -> float:
+    """Charge of one class-A uplink carrying a d-dimensional vector, in mC.
+
+    ``idle_ma`` (revision) replaces the current drawn while waiting for the two
+    receive windows (27 mA on the platform of Casals et al.) by a lower value,
+    for a node that sleeps through the receive delays.
+    """
     payload = LORAWAN_OVERHEAD + BYTES_PER_VALUE * d
     rx1 = {n: t for n, t, _ in LORA_STATES}["1st receive window"]
     wait2 = 1000.0 - rx1         # Eq. (4): the 2nd window opens 1 s after the 1st
-    q = sum(t * i for _, t, i in LORA_STATES) + wait2 * 27.1
+    states = [(n, t, (idle_ma if idle_ma is not None and n == "wait 1st window" else i))
+              for n, t, i in LORA_STATES]
+    q = sum(t * i for _, t, i in states) + wait2 * (27.1 if idle_ma is None else idle_ma)
     return (q + time_on_air_ms(payload, sf) * LORA_TX_MA) / 1e3
 
 
-def battery_years(msg_ratio: float, updates_per_hour: float, d: int) -> float:
+def battery_years(msg_ratio: float, updates_per_hour: float, d: int,
+                  idle_ma: float = None) -> float:
     """Battery life of a node whose radio sends msg_ratio * updates messages.
 
     Every message, up- or downlink, is charged as one uplink transaction; this
@@ -65,7 +73,7 @@ def battery_years(msg_ratio: float, updates_per_hour: float, d: int) -> float:
     window.  Sensing and the microcontroller's own work are the same for every
     method and are left out, so lives are upper bounds, as in the source paper.
     """
-    q_mah = charge_per_message_mc(d) / 3600.0       # mC -> mAh (1 mAh = 3.6 C)
+    q_mah = charge_per_message_mc(d, idle_ma=idle_ma) / 3600.0   # mC -> mAh
     i_avg = LORA_SLEEP_MA + msg_ratio * updates_per_hour * q_mah
     return BATTERY_MAH / i_avg / 8766.0
 
